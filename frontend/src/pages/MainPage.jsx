@@ -17,8 +17,18 @@ function findCategoryById(nodes, id) {
   return null
 }
 
+// 카테고리 트리를 위에서부터 순서대로 펼쳐 { categoryId: 순번 } 맵을 만든다. (드롭다운 목록과 같은 순서)
+function buildCategoryOrder(nodes, order = new Map()) {
+  for (const node of nodes) {
+    order.set(node.id, order.size)
+    if (node.children) buildCategoryOrder(node.children, order)
+  }
+  return order
+}
+
 export default function MainPage() {
   const [categories, setCategories] = useState([])
+  const [categoriesLoaded, setCategoriesLoaded] = useState(false)
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const { token } = useAuthStore()
@@ -34,7 +44,9 @@ export default function MainPage() {
   )
 
   useEffect(() => {
-    api.get('/categories').then(({ data }) => setCategories(data))
+    api.get('/categories')
+        .then(({ data }) => setCategories(data))
+        .finally(() => setCategoriesLoaded(true))
   }, [])
 
   useEffect(() => {
@@ -43,23 +55,30 @@ export default function MainPage() {
 
   useEffect(() => {
     setLoading(true)
-    // 카테고리가 없으면 전체 글을 최신순으로 조회
-    const params = categoryId ? { categoryId } : { sort: 'createdAt,desc', size: 30 }
+    // 카테고리가 없으면 전체 글을 조회 (순서는 아래에서 카테고리 순서대로 다시 정렬)
+    const params = categoryId ? { categoryId, size: 200 } : { size: 200 }
     api.get('/posts', { params })
         .then(({ data }) => setPosts(data.content))
         .catch(() => setPosts([]))
         .finally(() => setLoading(false))
   }, [categoryId])
 
+  // 카드 순서: 카테고리 트리 순서 → 카테고리 안의 글 순서(sortOrder)
+  const sortedPosts = useMemo(() => {
+    const categoryOrder = buildCategoryOrder(categories)
+    const rank = (post) => categoryOrder.get(post.categoryId) ?? Number.MAX_SAFE_INTEGER
+    return [...posts].sort((a, b) => rank(a) - rank(b) || a.sortOrder - b.sortOrder)
+  }, [posts, categories])
+
   const items = useMemo(
-      () => posts.map((post) => ({
+      () => sortedPosts.map((post) => ({
         src: createPostCardImage(post),
         alt: post.title,
         title: post.title,
         subtitle: `${post.categoryName} · ${new Date(post.createdAt).toLocaleDateString('ko-KR')}`,
         postId: post.id,
       })),
-      [posts]
+      [sortedPosts]
   )
 
   const canWrite = isAdmin && selectedCategory?.postAllowed
@@ -77,7 +96,7 @@ export default function MainPage() {
             </div>
         )}
 
-        {loading ? (
+        {loading || !categoriesLoaded ? (
             <div className="m-auto text-gray-500 text-sm">불러오는 중...</div>
         ) : items.length === 0 ? (
             <div className="m-auto text-gray-500 text-sm">글이 없습니다.</div>
