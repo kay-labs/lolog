@@ -1,0 +1,12 @@
+.gradle/
+**/build/
+.idea/
+*.iml
+.env
+node_modules/
+**/node_modules/
+application-local.yml
+**/application-local.yml
+**/dist/
+*.md
+!README.md
